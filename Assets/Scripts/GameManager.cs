@@ -9,20 +9,20 @@ public class GameManager : MonoBehaviour
     public float updateTime = 0.1f; // segundos entre una generacion y la siguiente
 
     private bool[,] grid;           // estado actual (true = viva)
-    private bool[,] nextGrid;       // doble buffer: aqui se escribe la generacion siguiente
+    //private bool[,] nextGrid;       // doble buffer: aqui se escribe la generacion siguiente
     private float timer;            // acumula tiempo hasta completar un updateTime
     private bool isPaused = false;
     private Texture2D texture;      // toda la grilla se dibuja en una sola textura
     private Color32[] pixels;       // buffer de color: 1 celda = 1 pixel
 
-    private static readonly Color32 AliveColor = new Color32(0, 0, 0, 255);
-    private static readonly Color32 DeadColor = new Color32(255, 255, 255, 255);
+    private static readonly Color32 SandColor = new Color32(0, 0, 0, 255);
+    private static readonly Color32 EmpyColor = new Color32(255, 255, 255, 255);
 
     void Start()
     {
         // Los arrays se reservan una sola vez, nunca dentro del bucle.
         grid = new bool[width, height];
-        nextGrid = new bool[width, height];
+        //nextGrid = new bool[width, height]; --> ya no lo necesito
 
         // Este script no lee teclas: escucha los eventos del InputManager.
         InputManager.Instance.OnPause += TogglePause;
@@ -108,7 +108,7 @@ public class GameManager : MonoBehaviour
         rend.sprite = sprite;
     }
 
-    // Mata todas las celdas.
+    // Vacia todas las celdas.
     public void ClearGrid()
     {
         for (int x = 0; x < width; x++)
@@ -128,7 +128,7 @@ public class GameManager : MonoBehaviour
         {
             for (int y = 0; y < height; y++)
             {
-                grid[x, y] = Random.value > 0.90f; // ~10% vivas
+                grid[x, y] = Random.value > 0.90f; // ~10% de celdas llenas con arena
             }
         }
         UpdateVisuals();
@@ -137,50 +137,63 @@ public class GameManager : MonoBehaviour
     // El corazon del automata: calcula una generacion entera.
     void Step()
     {
-        for (int x = 0; x < width; x++)
+        // Se recorre de abajo hacia arriba para verificar si las celdas estan libres o no, para que el grano de arena caiga o no.
+        for (int y = 1; y < height; y++)
         {
-            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
             {
-                int aliveNeighbors = CountAliveNeighbors(x, y);
-                bool alive = grid[x, y];
-
-                if (alive && (aliveNeighbors < 2 || aliveNeighbors > 3))
-                    nextGrid[x, y] = false; // Muere: soledad (<2) o sobrepoblacion (>3)
-                else if (!alive && aliveNeighbors == 3)
-                    nextGrid[x, y] = true;  // Nace: exactamente 3 vecinos
-                else
-                    nextGrid[x, y] = alive; // Se mantiene
-            }
-        }
-
-        // Leemos de grid y escribimos en nextGrid: nunca pisamos lo que falta por leer, asi que el orden del recorrido da igual.
-        var temp = grid;
-        grid = nextGrid;
-        nextGrid = temp;
-    }
-
-    // Vecindad de Moore: las 8 celdas que rodean a (x, y).
-    int CountAliveNeighbors(int x, int y)
-    {
-        int count = 0;
-
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                if (dx == 0 && dy == 0) continue; // no me cuento a mi mismo
-                int nx = x + dx;
-                int ny = y + dy;
-
-                // Fuera de la grilla cuenta como muerto
-                if (nx >= 0 && nx < width && ny >= 0 && ny < height)
+                if (grid[x, y])
                 {
-                    if (grid[nx, ny]) count++;
+                    MoveSandCell(x, y);
                 }
             }
         }
+    }
 
-        return count;
+    // Vecindad de Moore: las 8 celdas que rodean a (x, y).
+    void MoveSandCell(int x, int y)
+    {
+       // Arena cayendo, si abajo esta libre, cae directo
+       if (IsFree(x, y - 1))
+       {
+        grid[x, y] = false;
+        grid[x, y - 1] = true;
+        return;
+       }
+
+       // Colision con otra part de arena, si abajo esta acupado, se va en diagonal
+       bool leftFree = IsFree(x - 1, y - 1);
+       bool rightFree = IsFree(x + 1, y - 1);
+
+       // Se hace el movimiento en diagonal
+       if (leftFree && rightFree)
+       {
+        // ambas diagonales libres, elige alazar
+        int dx = (Random.value < 0.5f) ? -1 : 1;
+        grid[x, y] = false;
+        grid[x + dx, y - 1] = true;
+       }
+       else if (leftFree)
+       {
+        // caso abajo-izquierda libre
+        grid[x, y] = false;
+        grid[x - 1, y - 1] = true;
+       }
+       else if (rightFree)
+       {
+        // caso abajo-derecha libre
+        grid[x, y] = false;
+        grid[x + 1, y - 1] = true;
+       }
+       // al final se bloquea si ambas estan ocupadas, apilandose una por una
+    }
+
+    // Para que la celula no siga derecho y se salga del tablero
+    bool IsFree(int x, int y)
+    {
+        if (x < 0 || x >= width) return false;
+        if (y < 0 || y >= height) return false;
+        return !grid[x, y];
     }
 
     void HandleMouseClick()
@@ -212,7 +225,7 @@ public class GameManager : MonoBehaviour
             int row = y * width;
             for (int x = 0; x < width; x++)
             {
-                pixels[row + x] = grid[x, y] ? AliveColor : DeadColor;
+                pixels[row + x] = grid[x, y] ? SandColor : EmpyColor;
             }
         }
 
